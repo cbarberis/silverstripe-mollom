@@ -15,6 +15,15 @@ class MollomField extends SpamProtectorField {
 	static $always_show_captcha = false;
 	
 	static $force_check_on_members = false;
+
+	private $Mollom;
+
+	private function cachedMollom() {
+		if(!$this->Mollom)
+			$this->Mollom = new MollomServer();
+
+		return $this->Mollom;
+	}
 	
 	/**
 	 * Initiate mollom service fields
@@ -45,17 +54,14 @@ class MollomField extends SpamProtectorField {
 		
 		$html = $this->createTag('input', $attributes);
 
-		if($this->showCaptcha() ) {
-		
-			$mollom_session_id = Session::get("mollom_session_id");
-			$imageCaptcha = MollomServer::getImageCaptcha($mollom_session_id);
-			$audioCaptcha = MollomServer::getAudioCaptcha($mollom_session_id);
+		if($this->showCaptcha()) {
 			
-			Session::set("mollom_session_id", $imageCaptcha['session_id']);
-				
+			$mollom_session_id = Session::get("mollom_session_id");
+
+			$recaptcha = $this->cachedMollom()->createCaptcha(array('type' => 'image'));
+			Session::set("mollom_session_id", $recaptcha['id']);
 			$captchaHtml = '<div class="mollom-captcha">';
-			$captchaHtml .= '<span class="mollom-image-captcha">' . $imageCaptcha['html'] . '</span>';
-			$captchaHtml .= '<span class="mollom-audio-captcha">' . $audioCaptcha['html'] . '</span>';
+			$captchaHtml .= '<span class="mollom-image-captcha"><img src="'.$recaptcha['url'].'"/></span>';
 			$captchaHtml .= '</div>';
 			
 			return $html . $captchaHtml;
@@ -69,7 +75,7 @@ class MollomField extends SpamProtectorField {
 	 * @return bool 
 	 */
 	private function showCaptcha() {
-		if(Permission::check('ADMIN') || !MollomServer::verifyKey()) {
+		if(Permission::check('ADMIN')) {
 			return false; 
 		}
 		
@@ -117,7 +123,7 @@ class MollomField extends SpamProtectorField {
 		
 		// Check validate the captcha answer if the captcha was displayed
 		if($this->showCaptcha()) {
-			if(MollomServer::checkCaptcha($session_id, $this->Value())) {
+			if($this->cachedMollom()->captchaCheck($session_id, $this->Value())) {
 				$this->clearMollomSession();
 				return true;
 			}
@@ -145,27 +151,23 @@ class MollomField extends SpamProtectorField {
 		}
 
 		$this->mollomFields['session_id'] = $session_id;
-		$response = MollomServer::checkContent(
-			$this->mollomFields['session_id'],
-			$this->mollomFields['post_title'],
-			$this->mollomFields['post_body'],
-			$this->mollomFields['author_name'],
-			$this->mollomFields['author_url'],
-			$this->mollomFields['author_mail'],
-			$this->mollomFields['author_openid'],
-			$this->mollomFields['author_id']
-		);
 		
-		Session::set("mollom_session_id", $response['session_id']);
-	 	Session::set("mollom_user_session_id", $response['session_id']);
-	
-		// response was fine, let it pass through 
-		if ($response['spam'] == 'ham') {
-			$this->clearMollomSession();
+		$response = $this->cachedMollom()->check(array(
+		  'checks' => array('spam'),
+		  'postTitle' => $this->mollomFields['post_title'],
+		  'postBody' => $this->mollomFields['post_body'],
+		  'authorName' => $this->mollomFields['author_name'],
+		  'authorUrl' => $this->mollomFields['author_url'],
+		  'authorIp' => $_SERVER['REMOTE_ADDR'],
+		  'authorId' => $session_id, // If the author is logged in.
+		));
+		
+		Session::set("mollom_session_id", $response['authorId']);
+	 	Session::set("mollom_user_session_id", $response['authorId']);
+		
+		if($response['spamClassification'] == 'ham') {
 			return true;
-		} 
-		// response could be spam, or we just want to be sure.
-		else if($response['spam'] == 'unsure') {
+		} elseif($response['spamClassification'] == 'unsure') {
 			$validator->validationError(
 				$this->name, 
 				_t(
@@ -180,7 +182,7 @@ class MollomField extends SpamProtectorField {
 			return false;
 		}
 		// Mollom has detected spam!
-		else if($response['spam'] == 'spam') {
+		elseif($response['spamClassification'] == 'spam') {
 			$this->clearMollomSession();
 			$validator->validationError(
 				$this->name, 

@@ -81,7 +81,7 @@ class MollomServer extends Mollom {
 		// Prevent API calls from taking too long.
 		// Under normal operations, API calls may time out for Mollom users without
 		// a paid subscription.
-		curl_setopt($ch, CURLOPT_TIMEOUT, $this->requestTimeout);
+		// curl_setopt($ch, CURLOPT_TIMEOUT, $this->requestTimeout);
 
 		if($method == 'POST') {
 			curl_setopt($ch, CURLOPT_POST, TRUE);

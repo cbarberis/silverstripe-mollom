@@ -14,11 +14,8 @@ class MollomSpamProtector implements SpamProtector {
 	 * @return MollomField
 	 */
 	function getFormField($name = "MollomField", $title = "Captcha", $value = null, $form = null, $rightTitle = null) {
-		
-		// load servers. Needs to be called before validKeys() 
-		MollomServer::initServerList();
-		
-		return new MollomField($name, $title, $value, $form, $rightTitle);
+		$field = new MollomField($name, $title, $value, $form, $rightTitle);
+		return $field;
 	}
 	
 	/**
